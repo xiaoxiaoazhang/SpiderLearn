@@ -1,0 +1,13 @@
+# Mac Finder generated
+.DS_Store
+
+# Windows thumbnail db
+Thumbs.db
+
+# Jet Brains
+.idea/
+*.iml
+
+# python
+__pycache__
+*.pyc
