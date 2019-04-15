@@ -12,6 +12,8 @@ import zipfile
 from bs4 import BeautifulSoup
 # 正则表达式
 import re
+# 线程
+import _thread
 
 
 # 网站地址
@@ -298,35 +300,66 @@ def filter_invalid_window_file_name(old_name):
     return new_name
 
 
+def runnable_get_url(href, lock):
+    basedir = BASE_OUT_PUT_DIR + "/" + href.replace("/", "")
+    create_dir_relative(basedir)
+    if "/wenxue/" in href:
+        get_wenxue_urls(basedir, BASE_URL + href)
+    else:
+        get_item_url(basedir, BASE_URL + href)
+    lock.release()
+
+
+def runnable_download(book, lock):
+    url_list = read_file(book + "/index.txt")
+    index = 0
+    for url in url_list:
+        url_info = url.split("|")
+        download_file(url_info[0], url_info[1], book)
+        logging.info('%d--download--%s--finish' % (index, url))
+        index = index + 1
+    basedir = "{}/file".format(book)
+    # 解压文件
+    rarFile(basedir)
+    # 释放锁
+    lock.release()
+
+
 # 主函数入口
 def main():
     # 获取文件下载路径并保存
     create_dir_relative(BASE_OUT_PUT_DIR)
     urls = get_menu_urls(BASE_URL)
+    get_url_locks = []
     for href in urls:
-        basedir = BASE_OUT_PUT_DIR + "/" + href.replace("/", "")
-        create_dir_relative(basedir)
-        if "/wenxue/" in href:
-            get_wenxue_urls(basedir, BASE_URL + href)
-        else:
-            get_item_url(basedir, BASE_URL + href)
+        lock = _thread.allocate_lock()
+        lock.acquire()
+        get_url_locks.append(lock)
+        _thread.start_new_thread(runnable_get_url, (href, lock))
 
+    for i in range(len(get_url_locks)):
+        while get_url_locks[i].locked():
+            pass
+    logging.info("ready to download files!")
     # 根据保存的地址下载文件
     books = read_file(BASE_OUT_PUT_DIR + "/index.txt")
+    download_locks = []
     for book in books:
         if book == "" or book == "\n":
             continue
         book = book.strip().replace("\n", "")
-        url_list = read_file(book + "/index.txt")
-        index = 0
-        for url in url_list:
-            url_info = url.split("|")
-            download_file(url_info[0], url_info[1], book)
-            logging.info('%d--download--%s--finish' % (index, url))
-            index = index + 1
-        basedir = "{}/file".format(book)
-        # 解压文件
-        rarFile(basedir)
+        # 分配锁对象
+        lock = _thread.allocate_lock()
+        # 给锁对象加上锁 执行加锁方法
+        lock.acquire()
+        # 把加好锁的对象放进列表 一同传参
+        download_locks.append(lock)
+        # 创建子线程
+        _thread.start_new_thread(runnable_download, (book, lock))
+
+    for i in range(len(download_locks)):
+        while download_locks[i].locked():
+            pass
 
 
 if __name__ == "__main__":
