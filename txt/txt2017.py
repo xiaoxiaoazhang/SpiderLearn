@@ -12,8 +12,6 @@ import zipfile
 from bs4 import BeautifulSoup
 # 正则表达式
 import re
-# 文件编码检测
-import chardet
 
 
 # 网站地址
@@ -67,7 +65,7 @@ def get_wenxue_urls(basedir, url):
         try:
             address = index.find("a")
             href = address.attrs["href"]
-            # print("name: %s, href: %s" % (address.text, href))
+            print("name: %s, href: %s" % (address.text, href))
             folder = basedir + "/" + str(href)[8:]
             # print("folder: " + folder)
             create_dir_relative(folder)
@@ -77,6 +75,9 @@ def get_wenxue_urls(basedir, url):
 
 
 def get_item_url(basedir, url):
+    with open(BASE_OUT_PUT_DIR + "/index.txt", "a", encoding="utf-8") as f:
+        f.write(basedir + "\n")
+        print(basedir)
     html = get_html(url, basedir)
     if html == "":
         return
@@ -118,13 +119,13 @@ def get_current_page_url(basedir, url):
         address = bookname.find("a")
         if address is not None:
             href = address.attrs["href"]
-            # print("name: %s, href: %s" % (address.text, href))
-            get_book_download_url(basedir, BASE_URL + href)
+            print("name: %s, href: %s" % (address.text, href))
+            get_book_download_url(address.text, basedir, BASE_URL + href)
         else:
             print("li_bookname doesn't have attr address!")
 
 
-def get_book_download_url(basedir, url):
+def get_book_download_url(title, basedir, url):
     html = get_html(url, basedir)
     if html == "":
         return
@@ -142,12 +143,12 @@ def get_book_download_url(basedir, url):
     if address is not None:
         href = address.attrs["href"]
         # print("name: %s, href: %s" % (address.text, href))
-        get_download_book_url(basedir, BASE_URL + href)
+        get_download_book_url(title, basedir, BASE_URL + href)
     else:
         print("%s doesn't have address label" % url)
 
 
-def get_download_book_url(basedir, url):
+def get_download_book_url(title, basedir, url):
     html = get_html(url, basedir)
     if html == "":
         return
@@ -162,15 +163,13 @@ def get_download_book_url(basedir, url):
     if address is None:
         return
     href = address.attrs["href"]
-    title = address.attrs["title"]
-    # print("name: %s, href: %s" % (title, href))
-    save_url(basedir, "https://www.txt2019.com/e/DownSys" + str(href).replace("..", ""))
+    save_url(title, basedir, "https://www.txt2019.com/e/DownSys" + str(href).replace("..", ""))
 
 
-def save_url(basedir, url):
-    print("downloadUrl: %s--%s" % (basedir, url))
-    with open("%s/index.txt" % basedir, "a") as file:
-        file.write(url+"\n")
+def save_url(title, basedir, url):
+    print("downloadUrl: %s--%s--%s" % (title, basedir, url))
+    with open("%s/index.txt" % basedir, "a", encoding="utf-8") as file:
+        file.write(title + "|" + url + "\n")
 
 
 # 创建目录
@@ -210,8 +209,8 @@ def un_zip(file_name, folder):
         zip_file.extract(names, folder)
     zip_file.close()
     print("%s unzip ok" % file_name)
-    os.remove(file_name)
-    print("%s delete ok" % file_name)
+    # os.remove(file_name)
+    # print("%s delete ok" % file_name)
 
 
 def un_rar(file_name, folder):
@@ -223,8 +222,8 @@ def un_rar(file_name, folder):
         rar.extractall(folder)
         # rar.close()
         print("%s unrar ok" % file_name)
-        os.remove(file_name)
-        print("%s delete ok" % file_name)
+        # os.remove(file_name)
+        # print("%s delete ok" % file_name)
     except Exception as e:
         print(e)
 
@@ -249,7 +248,7 @@ def rarFile(path):
 
 
 # 从网络下载地址中获取文件名
-def download_file(url, basedir):
+def download_file(title, url, basedir):
     try:
         r = urllib.request.urlopen(url)
         if 'Content-Disposition' in r.info():
@@ -262,11 +261,17 @@ def download_file(url, basedir):
             fileName = basename(urlparse(r.url)[2])
         else:
             fileName = os.path.basename(url)
-        with open("%s/index_url.txt" % basedir, "a") as file:
-            file.write(r.url + "\n")
+        with open("%s/index_url.txt" % basedir, "a", encoding="utf-8") as file:
+            file.write(title + "|" + r.url + "\n")
         data = r.read()
         create_dir_relative("%s/file/" % basedir)
-        with open("%s/file/%s" % (basedir, fileName), "wb") as file:
+        if fileName.lower().endswith(".txt"):
+            fileName = title + ".txt"
+        elif fileName.lower().endswith(".rar"):
+            fileName = title + ".rar"
+        elif fileName.lower().endswith(".zip"):
+            fileName = title + ".zip"
+        with open("%s/file/%s" % (basedir, filter_invalid_window_file_name(fileName)), "wb") as file:
             file.write(data)
     except (urllib.error.HTTPError, IOError) as err:
         print(err)
@@ -287,76 +292,10 @@ def read_file(filename, encode='UTF-8'):
     return url_list
 
 
-def get_encoding(file):
-    with open(file, 'rb') as f:
-        # 取1024个字节检测，如果全检测的话太耗时间
-        byte_array = min(1024, os.path.getsize(file))
-        return chardet.detect(f.read(byte_array))['encoding']
-
-
 def filter_invalid_window_file_name(old_name):
     pattern = r'[\\/:*?"<>|\r\n]+'
     new_name = re.sub(pattern, '', old_name)  # 去掉非法字符
     return new_name
-
-
-def get_file_name_from_file(file_path):
-    file_name = ""
-    coding = get_encoding(file_path)
-    if coding is None:
-        coding = "GB2312"
-    print(file_path + ": " + coding)
-    # 二进制格式读取文件不能设置coding
-    with open(file_path, 'rb') as f:
-        line_index = 10
-        while line_index > 0:
-            line_index -= 1
-            line = f.readline()
-            if not line:
-                break
-            try:
-                line = line.decode(coding)
-                pattern = re.compile(r"《.+?》|<.+?>")
-                results = pattern.finditer(line)
-                for result in results:
-                    file_name = result.group()
-                    if '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">' in file_name:
-                        continue
-                    file_name = file_name.replace("<", "《").replace(">", "》")
-                    print(file_name)
-                    file_name = filter_invalid_window_file_name(file_name)
-                    line_index = 0
-                    break
-            except Exception as e:
-                print(str(line))
-                logging.error(e)
-                line_index = 0
-    return file_name
-
-
-# 检测新文件名是否存在，若存在则改名为xxx.1.txt，若还存在则数字加一直到不存在相同为止
-def check_file_name(folder, name, index=0):
-    if 0 == index:
-        file = os.path.join(folder, name)
-    else:
-        file = os.path.join(folder, "%s.%d" % (name, index))
-    if os.path.exists(file) and os.path.isfile(file):
-        return check_file_name(folder, name, index + 1)
-    else:
-        return file
-
-
-def rename_file(basedir):
-    for file in os.listdir(basedir):
-        file_path = os.path.join(basedir, file)
-        if os.path.isdir(file_path):
-            rename_file(file_path)
-        else:
-            if file_path.endswith('.txt') and os.path.getsize(file_path) > 0 and not (file.startswith("<") or file.startswith("《")):
-                new_name = get_file_name_from_file(file_path)
-                if new_name != "" and file != new_name:
-                    new_file = check_file_name(basedir, new_name)
-                    os.rename(file_path, new_file)
 
 
 # 主函数入口
@@ -373,20 +312,21 @@ def main():
             get_item_url(basedir, BASE_URL + href)
 
     # 根据保存的地址下载文件
-    books = ["/wenxue/gc", "/wenxue/dangdai", "/wenxue/yqxs"]
+    books = read_file(BASE_OUT_PUT_DIR + "/index.txt")
     for book in books:
-        basedir = BASE_OUT_PUT_DIR + "%s" % book
-        url_list = read_file(basedir + "/index.txt")
+        if book == "" or book == "\n":
+            continue
+        book = book.strip().replace("\n", "")
+        url_list = read_file(book + "/index.txt")
         index = 0
         for url in url_list:
-            download_file(url, basedir)
+            url_info = url.split("|")
+            download_file(url_info[0], url_info[1], book)
             logging.info('%d--download--%s--finish' % (index, url))
             index = index + 1
-        basedir = BASE_OUT_PUT_DIR + "{}/file".format(book)
+        basedir = "{}/file".format(book)
         # 解压文件
         rarFile(basedir)
-        # 重命名文件，这里其实可以不用，获取下载链接的时候就应该保存文件名，这个留给后面去实现
-        rename_file(basedir)
 
 
 if __name__ == "__main__":
